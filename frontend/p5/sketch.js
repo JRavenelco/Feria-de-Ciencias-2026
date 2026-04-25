@@ -15,52 +15,71 @@ const PERSON_COLORS = [
   [160,  80, 255],  // 7 violeta
 ];
 
-// ── Esqueleto ─────────────────────────────────────────────────────────────────
+// ── Esqueleto completo (17 KP COCO, upper + lower body) ──────────────────────
 const ALL_PARTS = [
-  'nose', 'shoulder/L', 'shoulder/R',
-  'elbow/L', 'elbow/R', 'wrist/L', 'wrist/R',
+  'nose',
+  'shoulder/L', 'shoulder/R',
+  'elbow/L',    'elbow/R',
+  'wrist/L',    'wrist/R',
+  'hip/L',      'hip/R',
+  'knee/L',     'knee/R',
+  'ankle/L',    'ankle/R',
 ];
+
 const BONES = [
-  ['shoulder/L', 'shoulder/R'],
+  // Cabeza – hombros
   ['nose',       'shoulder/L'], ['nose',       'shoulder/R'],
-  ['shoulder/L', 'elbow/L'],    ['elbow/L',    'wrist/L'],
-  ['shoulder/R', 'elbow/R'],    ['elbow/R',    'wrist/R'],
+  // Pecho
+  ['shoulder/L', 'shoulder/R'],
+  // Brazos
+  ['shoulder/L', 'elbow/L'],   ['elbow/L',   'wrist/L'],
+  ['shoulder/R', 'elbow/R'],   ['elbow/R',   'wrist/R'],
+  // Torso
+  ['shoulder/L', 'hip/L'],     ['shoulder/R', 'hip/R'],
+  ['hip/L',      'hip/R'],
+  // Piernas
+  ['hip/L',      'knee/L'],    ['knee/L',    'ankle/L'],
+  ['hip/R',      'knee/R'],    ['knee/R',    'ankle/R'],
 ];
+
 const JOINT_SIZE = {
-  'wrist/L': 22, 'wrist/R': 22,
-  'elbow/L': 16, 'elbow/R': 16,
-  'shoulder/L': 18, 'shoulder/R': 18,
-  'nose': 14,
+  'nose': 12,
+  'shoulder/L': 16, 'shoulder/R': 16,
+  'elbow/L': 13,    'elbow/R': 13,
+  'wrist/L': 18,    'wrist/R': 18,
+  'hip/L': 15,      'hip/R': 15,
+  'knee/L': 13,     'knee/R': 13,
+  'ankle/L': 12,    'ankle/R': 12,
 };
 
-// ── Escena — mapeo pose [0-1] → coordenadas 3D ────────────────────────────────
-// Persona de pie, vista frontal, cuerpo llena ~80% de pantalla
+// ── Mapeo pose [0,1] → escena (relativo a canvas) ─────────────────────────────
+// Se llama dentro de draw() donde width/height están disponibles
 function p2s(x, y, z) {
   return [
-    map(x, 0.1, 0.9, -450, 450),
-    map(y, 0.0, 1.0, -400, 400),
-    map(z, 0.0, 1.0,  180, -180),
+    map(x, 0, 1, -width  * 0.44, width  * 0.44),
+    map(y, 0, 1, -height * 0.46, height * 0.46),
+    map(z, 0, 1,  180, -180),
   ];
 }
 
 // ── Partículas de calor ────────────────────────────────────────────────────────
 const particles = [];
-const PART_MAX  = 800;
+const PART_MAX  = 600;
 
 function spawnParticles(sx, sy, sz, r, g, b, heat) {
   if (particles.length >= PART_MAX) return;
-  const n = Math.ceil(heat * 6);
+  const n = Math.ceil(heat * 5);
   for (let i = 0; i < n; i++) {
     particles.push({
-      x: sx + (Math.random() - 0.5) * 30,
-      y: sy + (Math.random() - 0.5) * 30,
-      z: sz + (Math.random() - 0.5) * 30,
-      vx: (Math.random() - 0.5) * 0.8,
-      vy: -Math.random() * 1.2 - 0.3,   // sube lentamente
-      vz: (Math.random() - 0.5) * 0.8,
+      x: sx + (Math.random() - 0.5) * 25,
+      y: sy + (Math.random() - 0.5) * 25,
+      z: sz + (Math.random() - 0.5) * 25,
+      vx: (Math.random() - 0.5) * 0.7,
+      vy: -Math.random() * 1.1 - 0.2,
+      vz: (Math.random() - 0.5) * 0.7,
       r, g, b,
       born: millis(),
-      life: 600 + Math.random() * 900,
+      life: 500 + Math.random() * 800,
     });
   }
 }
@@ -70,10 +89,9 @@ const pose         = {};
 const poseHistory  = {};
 const poseVelocity = {};
 let   lastPoseTime = 0;
-
-let connected = false;
-let socket;
-const lastSeen = new Array(MAX_PERSONS).fill(0);
+let   connected    = false;
+let   socket;
+const lastSeen     = new Array(MAX_PERSONS).fill(0);
 const PERSON_TIMEOUT = 3000;
 
 // ── Cámara ────────────────────────────────────────────────────────────────────
@@ -81,7 +99,6 @@ let camX = 0.0, camY = 0.0, camZoom = 1.0;
 let autoRotate = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Color heat: frío (base) → naranja → blanco caliente
 function heatColor(base, heat) {
   if (heat < 0.5) {
     const t = heat * 2;
@@ -137,7 +154,9 @@ function connectWS() {
 
     Object.assign(pose, data.latestPose);
     for (let id = 0; id < MAX_PERSONS; id++) {
-      if (pose[`/pose/${id}/wrist/L`] || pose[`/pose/${id}/wrist/R`]) lastSeen[id] = millis();
+      for (const part of ['wrist/L', 'wrist/R', 'ankle/L', 'ankle/R']) {
+        if (pose[`/pose/${id}/${part}`]) { lastSeen[id] = millis(); break; }
+      }
     }
     if (pose['/pose/wrist/L'] || pose['/pose/wrist/R']) lastSeen[0] = millis();
   });
@@ -155,26 +174,24 @@ function setup() {
 // ─── draw ────────────────────────────────────────────────────────────────────
 function draw() {
   background(4, 6, 16);
+  ambientLight(18, 22, 36);
 
-  // Luz ambiental muy tenue — el glow emissive es la luz principal
-  ambientLight(15, 18, 30);
-
-  // Point lights desde muñecas y nariz (reactivos al calor)
+  // Luces desde muñecas/tobillos reactivas al calor
   for (let id = 0; id < MAX_PERSONS; id++) {
     if (!personActive(id)) continue;
     const base = PERSON_COLORS[id % PERSON_COLORS.length];
-    for (const part of ['wrist/L', 'wrist/R', 'nose']) {
+    for (const part of ['wrist/L', 'wrist/R', 'ankle/L', 'ankle/R', 'nose']) {
       const pt = getPt(id, part);
       if (!pt) continue;
       const heat = poseVelocity[`/pose/${id}/${part}`] || 0;
       const [r, g, b] = heatColor(base, heat);
       const [sx, sy, sz] = p2s(pt.x, pt.y, pt.z);
-      const ints = 0.7 + heat * 1.3;
-      pointLight(r * ints, g * ints, b * ints, sx, sy, sz + 80);
+      const ints = 0.6 + heat * 1.4;
+      pointLight(r * ints, g * ints, b * ints, sx, sy, sz + 100);
     }
   }
 
-  // ── Cámara ───────────────────────────────────────────────────────────────
+  // Cámara
   if (autoRotate) camY += 0.003;
   rotateX(camX);
   rotateY(camY);
@@ -185,7 +202,7 @@ function draw() {
   noStroke();
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    const age   = now - p.born;
+    const age = now - p.born;
     if (age > p.life) { particles.splice(i, 1); continue; }
     const alpha = 1 - age / p.life;
     p.x += p.vx; p.y += p.vy; p.z += p.vz;
@@ -202,7 +219,7 @@ function draw() {
     if (!personActive(id)) continue;
     const base = PERSON_COLORS[id % PERSON_COLORS.length];
 
-    // Huesos — líneas brillantes
+    // Huesos
     for (const [pA, pB] of BONES) {
       const ptA = getPt(id, pA);
       const ptB = getPt(id, pB);
@@ -210,7 +227,7 @@ function draw() {
       const hA = poseVelocity[`/pose/${id}/${pA}`] || 0;
       const hB = poseVelocity[`/pose/${id}/${pB}`] || 0;
       const [r, g, b] = heatColor(base, (hA + hB) * 0.5);
-      stroke(r, g, b, 210);
+      stroke(r, g, b, 220);
       strokeWeight(5);
       noFill();
       const [x1, y1, z1] = p2s(ptA.x, ptA.y, ptA.z);
@@ -218,7 +235,7 @@ function draw() {
       line(x1, y1, z1, x2, y2, z2);
     }
 
-    // Articulaciones — esferas con glow emissive
+    // Articulaciones
     noStroke();
     for (const part of ALL_PARTS) {
       const pt = getPt(id, part);
@@ -226,31 +243,27 @@ function draw() {
       const heat = poseVelocity[`/pose/${id}/${part}`] || 0;
       const [r, g, b] = heatColor(base, heat);
       const [sx, sy, sz] = p2s(pt.x, pt.y, pt.z);
-      const rad = JOINT_SIZE[part] || 16;
-
-      // Spawn partículas si se mueve rápido
-      if (heat > 0.3) spawnParticles(sx, sy, sz, r, g, b, heat);
+      if (heat > 0.25) spawnParticles(sx, sy, sz, r, g, b, heat);
 
       emissiveMaterial(r * 0.55, g * 0.55, b * 0.55);
       specularMaterial(r, g, b);
       shininess(90);
       push();
       translate(sx, sy, sz);
-      sphere(rad, 12, 8);
+      sphere(JOINT_SIZE[part] || 14, 12, 8);
       pop();
     }
   }
 
-  // ── HUD DOM ───────────────────────────────────────────────────────────────
+  // ── HUD ───────────────────────────────────────────────────────────────────
   let activePeople = 0;
   for (let id = 0; id < MAX_PERSONS; id++) if (personActive(id)) activePeople++;
   const hud = document.getElementById('hud');
   if (hud) {
     hud.innerHTML =
       `<span style="color:${connected ? '#46dc82' : '#dc5050'}">${connected ? '● OSC' : '○ Sin OSC'}</span>` +
-      `&nbsp;&nbsp;personas:&nbsp;${activePeople}&nbsp;&nbsp;|&nbsp;&nbsp;` +
-      `partículas:&nbsp;${particles.length}&nbsp;&nbsp;|&nbsp;&nbsp;` +
-      `R&nbsp;reset&nbsp;|&nbsp;F&nbsp;fullscreen&nbsp;|&nbsp;Espacio&nbsp;rotación`;
+      `&nbsp;&nbsp;personas:&nbsp;${activePeople}` +
+      `&nbsp;&nbsp;|&nbsp;&nbsp;F fullscreen&nbsp;&nbsp;|&nbsp;&nbsp;Espacio rotación`;
   }
 }
 
@@ -267,7 +280,7 @@ function mouseWheel(event) {
 }
 
 function keyPressed() {
-  if (key === 'r' || key === 'R') { particles.length = 0; }
+  if (key === 'r' || key === 'R') particles.length = 0;
   if (key === 'f' || key === 'F') {
     const el = document.querySelector('canvas');
     if (el.requestFullscreen)            el.requestFullscreen();

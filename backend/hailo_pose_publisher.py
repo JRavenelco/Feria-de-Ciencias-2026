@@ -61,22 +61,22 @@ class _FixedPoseApp(GStreamerPoseEstimationApp):
 # ── COCO keypoints relevantes ────────────────────────────────────────────────
 KP = {
     'nose':       0,
-    'shoulder_l': 5,
-    'shoulder_r': 6,
-    'elbow_l':    7,
-    'elbow_r':    8,
-    'wrist_l':    9,
-    'wrist_r':   10,
+    'shoulder_l': 5,  'shoulder_r': 6,
+    'elbow_l':    7,  'elbow_r':    8,
+    'wrist_l':    9,  'wrist_r':   10,
+    'hip_l':     11,  'hip_r':     12,
+    'knee_l':    13,  'knee_r':    14,
+    'ankle_l':   15,  'ankle_r':   16,
 }
 
 LANDMARK_TO_ADDRESS = {
-    'wrist_l':    'wrist/L',
-    'wrist_r':    'wrist/R',
-    'elbow_l':    'elbow/L',
-    'elbow_r':    'elbow/R',
-    'shoulder_l': 'shoulder/L',
-    'shoulder_r': 'shoulder/R',
+    'wrist_l':    'wrist/L',    'wrist_r':    'wrist/R',
+    'elbow_l':    'elbow/L',    'elbow_r':    'elbow/R',
+    'shoulder_l': 'shoulder/L', 'shoulder_r': 'shoulder/R',
     'nose':       'nose',
+    'hip_l':      'hip/L',      'hip_r':      'hip/R',
+    'knee_l':     'knee/L',     'knee_r':     'knee/R',
+    'ankle_l':    'ankle/L',    'ankle_r':    'ankle/R',
 }
 
 # ── Publisher OSC con suavizado por persona ──────────────────────────────────
