@@ -3,6 +3,7 @@
 
 const WS_URL      = 'ws://127.0.0.1:8081';
 const MAX_PERSONS = 8;
+let   hudFont;
 
 const PERSON_COLORS = [
   [  0, 210, 255],  // 0 cyan
@@ -130,12 +131,18 @@ function connectWS() {
   });
 }
 
+// ─── preload ─────────────────────────────────────────────────────────────────
+function preload() {
+  hudFont = loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Regular.otf');
+}
+
 // ─── setup ───────────────────────────────────────────────────────────────────
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   colorMode(RGB, 255);
   frameRate(60);
   setAttributes('antialias', true);
+  if (hudFont) textFont(hudFont);
   initCells();
   seedNucleus();
   connectWS();
