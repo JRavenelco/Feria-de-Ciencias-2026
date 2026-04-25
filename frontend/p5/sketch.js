@@ -3,7 +3,6 @@
 
 const WS_URL      = 'ws://127.0.0.1:8081';
 const MAX_PERSONS = 8;
-let   hudFont;
 
 const PERSON_COLORS = [
   [  0, 210, 255],  // 0 cyan
@@ -131,18 +130,12 @@ function connectWS() {
   });
 }
 
-// ─── preload ─────────────────────────────────────────────────────────────────
-function preload() {
-  hudFont = loadFont('https://cdnjs.cloudflare.com/ajax/libs/topcoat/0.8.0/font/SourceCodePro-Regular.otf');
-}
-
 // ─── setup ───────────────────────────────────────────────────────────────────
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   colorMode(RGB, 255);
   frameRate(60);
   setAttributes('antialias', true);
-  if (hudFont) textFont(hudFont);
   initCells();
   seedNucleus();
   connectWS();
@@ -231,38 +224,15 @@ function draw() {
         pop();
       }
 
-  // ── HUD 2D ─────────────────────────────────────────────────────────────────
-  push();
-  ortho(-width/2, width/2, -height/2, height/2);
-  camera();
-  noLights();
-  noStroke();
-
-  // Barra superior
-  fill(6, 8, 20, 200);
-  rect(-width/2, -height/2, width, 36, 0, 0, 6, 6);
-
-  textSize(13); textAlign(LEFT, TOP);
-  fill(connected ? color(70, 220, 130) : color(220, 80, 80));
-  text(connected ? '● OSC' : '○ Sin OSC', -width/2 + 14, -height/2 + 11);
-
-  fill(160, 190, 255);
+  // ── HUD DOM ────────────────────────────────────────────────────────────────
   let activePeople = 0;
   for (let id = 0; id < MAX_PERSONS; id++) if (personActive(id)) activePeople++;
-  text(`iter: ${iteration}  |  células: ${active}  |  personas: ${activePeople}  |  F: fullscreen  |  Espacio: pausa rotación`,
-       -width/2 + 80, -height/2 + 11);
-
-  // Indicadores de personas activas
-  for (let id = MAX_PERSONS - 1; id >= 0; id--) {
-    if (!personActive(id)) continue;
-    const col = PERSON_COLORS[id % PERSON_COLORS.length];
-    const bx  = width/2 - 18 - id * 24;
-    fill(col[0], col[1], col[2], 220);
-    ellipse(bx, -height/2 + 18, 14, 14);
-    fill(255); textSize(9); textAlign(CENTER, CENTER);
-    text(id, bx, -height/2 + 18);
+  const hud = document.getElementById('hud');
+  if (hud) {
+    hud.innerHTML =
+      `<span style="color:${connected ? '#46dc82' : '#dc5050'}">${connected ? '● OSC' : '○ Sin OSC'}</span>` +
+      `&nbsp;&nbsp;iter:&nbsp;${iteration}&nbsp;|&nbsp;células:&nbsp;${active}&nbsp;|&nbsp;personas:&nbsp;${activePeople}`;
   }
-  pop();
 }
 
 // ─── Interacción ─────────────────────────────────────────────────────────────

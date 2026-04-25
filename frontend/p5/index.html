@@ -16,9 +16,15 @@
       canvas {
         display: block;
       }
+
+      #hud { position:fixed; top:0; left:0; width:100%; padding:9px 14px;
+        background:rgba(6,8,20,.8); color:#a0beff;
+        font-family:'Courier New',monospace; font-size:13px;
+        pointer-events:none; z-index:10; }
     </style>
   </head>
   <body>
+    <div id="hud">Iniciando…</div>
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
     <script src="./sketch.js"></script>
   </body>
