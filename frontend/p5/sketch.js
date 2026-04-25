@@ -40,7 +40,7 @@ const JOINT_RADIUS = {
 // ── Grid autómata ─────────────────────────────────────────────────────────────
 const GRID      = 24;
 const CELL_SIZE = 14;
-const S_MIN = 4, S_MAX = 7, B_N = 5;
+const S_MIN = 4, S_MAX = 7, B_MIN = 3, B_MAX = 6;  // nacimiento más permisivo → crece desde esqueleto
 const ITER_EVERY = 6;
 
 let cells, nextCells;
@@ -102,7 +102,7 @@ function stepAutomata() {
         if (cells[i]) {
           nextCells[i] = (n >= S_MIN && n <= S_MAX) ? 1 : 0;
         } else {
-          nextCells[i] = (n === B_N) ? 1 : 0;
+          nextCells[i] = (n >= B_MIN && n <= B_MAX) ? 1 : 0;
         }
         if (nextCells[i]) {
           cellAge[i] = cells[i] ? min(255, cellAge[i] + 1) : 0;
@@ -216,7 +216,7 @@ function setup() {
   frameRate(60);
   setAttributes('antialias', true);
   initCells();
-  seedNucleus();
+  // Sin núcleo inicial — el cuerpo detectado es el único origen de células
   connectWS();
 }
 
@@ -250,16 +250,17 @@ function draw() {
     if (!personActive(id)) continue;
     const base = PERSON_COLORS[id % PERSON_COLORS.length];
 
-    // Articulaciones individuales
+    // Articulaciones — radio mayor para que el autómata prenda
     for (const part of ALL_PARTS) {
       const pt   = getPt(id, part);
       if (!pt) continue;
       const heat = poseVelocity[`/pose/${id}/${part}`] || 0;
       const [r, g, b] = heatColor(base, heat);
-      seedAtNorm(pt.x, pt.y, pt.z, r, g, b, JOINT_RADIUS[part] || 1);
+      const rad  = (JOINT_RADIUS[part] || 1) + 1;  // +1 → más masa inicial
+      seedAtNorm(pt.x, pt.y, pt.z, r, g, b, rad);
     }
 
-    // Huesos — segmentos entre articulaciones
+    // Huesos — segmentos densos entre articulaciones (forman el cuerpo)
     for (const [partA, partB] of BONES) {
       const ptA = getPt(id, partA);
       const ptB = getPt(id, partB);
@@ -267,7 +268,7 @@ function draw() {
       const heatA = poseVelocity[`/pose/${id}/${partA}`] || 0;
       const heatB = poseVelocity[`/pose/${id}/${partB}`] || 0;
       const [r, g, b] = heatColor(base, (heatA + heatB) * 0.5);
-      seedBone(ptA, ptB, r, g, b, 7, 1);
+      seedBone(ptA, ptB, r, g, b, 10, 2);  // más pasos y radio → hueso sólido
     }
   }
 
