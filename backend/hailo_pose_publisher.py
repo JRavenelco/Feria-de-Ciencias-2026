@@ -44,6 +44,20 @@ from hailo_apps.hailo_app_python.core.common.core import get_default_parser
 
 from pythonosc.udp_client import SimpleUDPClient
 
+# ── Rutas reales de post-processing en esta instalación ─────────────────────
+# get_resource_path() resuelve a /usr/local/hailo/resources/so/ que no existe.
+# El .so real está en el path de TAPPAS con nombre y función diferentes.
+_CORRECT_SO = '/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolov8pose_post.so'
+_CORRECT_FN = 'filter'
+
+
+class _FixedPoseApp(GStreamerPoseEstimationApp):
+    """Subclase que corrige las rutas del post-processor para esta instalación."""
+    def get_pipeline_string(self):
+        self.post_process_so       = _CORRECT_SO
+        self.post_process_function = _CORRECT_FN
+        return super().get_pipeline_string()
+
 # ── COCO keypoints relevantes ────────────────────────────────────────────────
 KP = {
     'nose':       0,
@@ -210,7 +224,7 @@ def main():
     print(f"Publicando OSC → udp://{args.host}:{args.port}")
     print("Ctrl+C para detener.\n")
 
-    app = GStreamerPoseEstimationApp(app_callback, user_data, parser)
+    app = _FixedPoseApp(app_callback, user_data, parser)
     app.run()
 
 
