@@ -191,6 +191,7 @@ function draw() {
   noStroke();
 
   // ── Dibujar células ────────────────────────────────────────────────────────
+  fill(255);
   const half    = GRID * CELL_SIZE * 0.5;
   const SRAD    = CELL_SIZE * 0.5;
   let   active  = 0;
