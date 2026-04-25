@@ -3,34 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Feria de Ciencias 2026 - ArtPose Vision</title>
+    <title>Feria de Ciencias 2026 — ArtPose Vision</title>
     <style>
       html,
       body {
         margin: 0;
         padding: 0;
-        background: #050816;
+        background: #0c0e1c;
         overflow: hidden;
-        font-family: Arial, Helvetica, sans-serif;
       }
 
-      #status {
-        position: fixed;
-        top: 16px;
-        left: 16px;
-        z-index: 10;
-        color: #d7e7ff;
-        background: rgba(8, 15, 32, 0.68);
-        border: 1px solid rgba(103, 160, 255, 0.28);
-        border-radius: 12px;
-        padding: 10px 14px;
-        font-size: 14px;
-        backdrop-filter: blur(10px);
+      canvas {
+        display: block;
       }
     </style>
   </head>
   <body>
-    <div id="status">Conectando al puente OSC...</div>
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
     <script src="./sketch.js"></script>
   </body>
