@@ -55,14 +55,14 @@ KEYPOINT_IDX: Dict[str, int] = {
     "wrist_l":    7,
 }
 
-LANDMARK_TO_ADDRESS: Dict[str, str] = {
-    "wrist_l":    "/pose/wrist/L",
-    "wrist_r":    "/pose/wrist/R",
-    "elbow_l":    "/pose/elbow/L",
-    "elbow_r":    "/pose/elbow/R",
-    "shoulder_l": "/pose/shoulder/L",
-    "shoulder_r": "/pose/shoulder/R",
-    "nose":       "/pose/nose",
+LANDMARK_SUFFIX: Dict[str, str] = {
+    "wrist_l":    "wrist/L",
+    "wrist_r":    "wrist/R",
+    "elbow_l":    "elbow/L",
+    "elbow_r":    "elbow/R",
+    "shoulder_l": "shoulder/L",
+    "shoulder_r": "shoulder/R",
+    "nose":       "nose",
 }
 
 Point3D = Tuple[float, float, float]
@@ -148,8 +148,9 @@ def build_pipeline(blob_path: str, fps: int) -> "dai.Pipeline":
     return pipeline
 
 
-def oak_pose_frames(blob_path: str, fps: int) -> Iterable[PoseFrame]:
+def oak_pose_frames(blob_path: str, fps: int, person_id: int = 4) -> Iterable[PoseFrame]:
     """Generador: un dict de landmarks por cada frame inferido en la OAK."""
+    args_person_id = person_id
     pipeline = build_pipeline(blob_path, fps)
 
     with dai.Device(pipeline) as device:
@@ -174,7 +175,7 @@ def oak_pose_frames(blob_path: str, fps: int) -> Iterable[PoseFrame]:
 
             # Rellena keypoints faltantes con el frame anterior
             landmarks: Dict[str, Point3D] = {}
-            for name in LANDMARK_TO_ADDRESS:
+            for name in LANDMARK_SUFFIX:
                 pt = kps.get(name) or prev_kps.get(name)
                 if pt is not None:
                     landmarks[name] = pt
@@ -182,7 +183,7 @@ def oak_pose_frames(blob_path: str, fps: int) -> Iterable[PoseFrame]:
             prev_kps = {k: v for k, v in kps.items() if v is not None}
 
             if landmarks:
-                yield {"id": 0, "landmarks": landmarks}
+                yield {"id": args_person_id, "landmarks": landmarks}
 
 
 # ── Publicador OSC ───────────────────────────────────────────────────────────
@@ -194,18 +195,17 @@ class OscPublisher:
         self._state: Dict[str, Point3D] = {}
 
     def publish(self, frame: PoseFrame) -> None:
-        person_id = int(frame.get("id", 0))
+        person_id = int(frame.get("id", 4))
         landmarks: Dict[str, Point3D] = frame.get("landmarks", {})
 
-        for name, address in LANDMARK_TO_ADDRESS.items():
+        for name, suffix in LANDMARK_SUFFIX.items():
             pt = landmarks.get(name)
             if pt is None:
                 continue
             pt = self._smooth(name, pt)
-            self.client.send_message(address, list(pt))
-            self.client.send_message(f"{address}/id", person_id)
+            self.client.send_message(f'/pose/{person_id}/{suffix}', list(pt))
 
-        self.client.send_message("/pose/person/id", person_id)
+        self.client.send_message('/pose/count', 1)
 
     def _smooth(self, name: str, current: Point3D) -> Point3D:
         prev = self._state.get(name)
@@ -240,6 +240,8 @@ def parse_args() -> argparse.Namespace:
                    help="SHAVE cores del Myriad X para la NN (default: 6, rango 4-13)")
     p.add_argument("--openvino-version", default="2022.1",
                    help="Versión de OpenVINO para blobconverter (default: 2022.1)")
+    p.add_argument("--person-id", type=int, default=4,
+                   help="ID de persona asignado a la OAK (default: 4, rango 4-7)")
     return p.parse_args()
 
 
@@ -264,8 +266,10 @@ def main() -> int:
     print(f"Publicando OSC → udp://{args.host}:{args.port}  @  {args.fps} FPS")
     print("Ctrl+C para detener.\n")
 
+    print(f"  Person-ID OAK: {args.person_id} (Hailo usa 0-3, OAK usa 4-7)\n")
+
     try:
-        for frame in oak_pose_frames(blob_path, args.fps):
+        for frame in oak_pose_frames(blob_path, args.fps, person_id=args.person_id):
             t0 = time.perf_counter()
             publisher.publish(frame)
             remaining = frame_interval - (time.perf_counter() - t0)

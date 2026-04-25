@@ -161,7 +161,7 @@ def app_callback(pad, info, user_data: PoseCallbackData):
 
         # Track ID (asignado por el tracker SORT en el pipeline)
         track_objs = detection.get_objects_typed(hailo.HAILO_UNIQUE_ID)
-        pid = track_objs[0].get_id() % 8 if track_objs else 0   # máx 8 personas
+        pid = track_objs[0].get_id() % 4 if track_objs else 0   # IDs 0-3 (Hailo+CSI)
 
         bbox = detection.get_bbox()
 
