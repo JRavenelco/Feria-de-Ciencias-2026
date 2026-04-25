@@ -15,6 +15,28 @@ const PERSON_COLORS = [
   [160,  80, 255],  // 7 violeta
 ];
 
+// ── Esqueleto corporal ────────────────────────────────────────────────────────
+const ALL_PARTS = [
+  'nose', 'shoulder/L', 'shoulder/R',
+  'elbow/L', 'elbow/R', 'wrist/L', 'wrist/R',
+];
+
+// Pares de articulaciones que forman "huesos"
+const BONES = [
+  ['shoulder/L', 'shoulder/R'],   // pecho
+  ['nose',       'shoulder/L'],   // cuello-izq
+  ['nose',       'shoulder/R'],   // cuello-der
+  ['shoulder/L', 'elbow/L'],      // brazo sup izq
+  ['elbow/L',    'wrist/L'],      // brazo inf izq
+  ['shoulder/R', 'elbow/R'],      // brazo sup der
+  ['elbow/R',    'wrist/R'],      // brazo inf der
+];
+
+const JOINT_RADIUS = {
+  'nose': 1, 'shoulder/L': 1, 'shoulder/R': 1,
+  'elbow/L': 1, 'elbow/R': 1, 'wrist/L': 2, 'wrist/R': 2,
+};
+
 // ── Grid autómata ─────────────────────────────────────────────────────────────
 const GRID      = 24;
 const CELL_SIZE = 14;
@@ -29,8 +51,12 @@ let iteration = 0, iterTimer = 0;
 let camX = -0.45, camY = 0.65, camZoom = 1.0;
 let autoRotate = true;
 
-// ── OSC / Personas ────────────────────────────────────────────────────────────
-const pose = {};
+// ── OSC / Personas / Velocidad ────────────────────────────────────────────────
+const pose        = {};
+const poseHistory = {};   // key → [x,y,z] del frame anterior
+const poseVelocity= {};   // key → 0-1 (suavizado, 0=quieto 1=rápido)
+let   lastPoseTime = 0;
+
 let connected = false;
 let socket;
 const lastSeen = new Array(MAX_PERSONS).fill(0);
@@ -105,6 +131,32 @@ function seedAtNorm(nx, ny, nz, r, g, b, radius) {
       }
 }
 
+// Siembra células a lo largo del segmento entre dos puntos (hueso)
+function seedBone(ptA, ptB, r, g, b, steps, radius) {
+  for (let t = 0; t <= 1; t += 1 / steps) {
+    seedAtNorm(
+      ptA.x + (ptB.x - ptA.x) * t,
+      ptA.y + (ptB.y - ptA.y) * t,
+      ptA.z + (ptB.z - ptA.z) * t,
+      r, g, b, radius
+    );
+  }
+}
+
+// Color heat: frío (base) → naranja → blanco caliente
+function heatColor(base, heat) {
+  if (heat < 0.5) {
+    const t = heat * 2;
+    return [
+      Math.round(base[0] + (255 - base[0]) * t),
+      Math.round(base[1] + (160 - base[1]) * t),
+      Math.round(base[2] * (1 - t)),
+    ];
+  }
+  const t = (heat - 0.5) * 2;
+  return [255, Math.round(160 + 95 * t), Math.round(200 * t)];
+}
+
 function getPt(id, part) {
   let v = pose[`/pose/${id}/${part}`];
   if (!v && id === 0) v = pose[`/pose/${part}`];
@@ -122,6 +174,33 @@ function connectWS() {
   socket.addEventListener('message', (e) => {
     const data = JSON.parse(e.data);
     if (!data.latestPose) return;
+
+    // Calcular velocidad ANTES de sobreescribir pose
+    const now   = millis();
+    const dt    = Math.max((now - lastPoseTime) / 1000, 0.016);
+    lastPoseTime = now;
+
+    for (let id = 0; id < MAX_PERSONS; id++) {
+      for (const part of ALL_PARTS) {
+        const key  = `/pose/${id}/${part}`;
+        const newV = data.latestPose[key];
+        const prev = poseHistory[key];
+        if (newV && prev) {
+          const dx = newV[0] - prev[0];
+          const dy = newV[1] - prev[1];
+          const dz = newV[2] - prev[2];
+          const speed = Math.sqrt(dx*dx + dy*dy + dz*dz) / dt;
+          // Suavizado exponencial: sube rápido, baja lento
+          const target = Math.min(speed * 7, 1);
+          const prev_v = poseVelocity[key] || 0;
+          poseVelocity[key] = target > prev_v
+            ? prev_v * 0.4 + target * 0.6    // sube rápido
+            : prev_v * 0.85 + target * 0.15; // baja lento (efecto rescoldo)
+        }
+        if (newV) poseHistory[key] = newV;
+      }
+    }
+
     Object.assign(pose, data.latestPose);
     for (let id = 0; id < MAX_PERSONS; id++) {
       if (pose[`/pose/${id}/wrist/L`] || pose[`/pose/${id}/wrist/R`]) lastSeen[id] = millis();
@@ -150,27 +229,45 @@ function draw() {
   directionalLight(80, 110, 180, 0.3, 0.6, -1.0);
   directionalLight(20, 15,  50, -0.3, -0.4, 0.5);
 
-  // Point lights desde muñecas activas
+  // Point lights dinámicos desde todas las articulaciones activas
   for (let id = 0; id < MAX_PERSONS; id++) {
     if (!personActive(id)) continue;
-    const col = PERSON_COLORS[id % PERSON_COLORS.length];
-    for (const part of ['wrist/L', 'wrist/R']) {
+    const base = PERSON_COLORS[id % PERSON_COLORS.length];
+    for (const part of ALL_PARTS) {
       const pt = getPt(id, part);
       if (!pt) continue;
-      const px = map(pt.x, 0, 1, -width * 0.45, width * 0.45);
-      const py = map(pt.y, 0, 1, -height * 0.45, height * 0.45);
-      pointLight(col[0], col[1], col[2], px, py, 350);
+      const heat = poseVelocity[`/pose/${id}/${part}`] || 0;
+      const col  = heatColor(base, heat);
+      const px   = map(pt.x, 0, 1, -width  * 0.45, width  * 0.45);
+      const py   = map(pt.y, 0, 1, -height * 0.45, height * 0.45);
+      const intensity = 0.6 + heat * 1.4;   // mucho más brillante al moverse
+      pointLight(col[0] * intensity, col[1] * intensity, col[2] * intensity, px, py, 300);
     }
   }
 
-  // ── Siembra de pose ────────────────────────────────────────────────────────
+  // ── Siembra corporal — articulaciones y huesos ─────────────────────────────
   for (let id = 0; id < MAX_PERSONS; id++) {
     if (!personActive(id)) continue;
-    const col = PERSON_COLORS[id % PERSON_COLORS.length];
-    const seeds = [['wrist/L',2],['wrist/R',2],['elbow/L',1],['elbow/R',1]];
-    for (const [part, r] of seeds) {
-      const pt = getPt(id, part);
-      if (pt) seedAtNorm(pt.x, pt.y, pt.z, col[0], col[1], col[2], r);
+    const base = PERSON_COLORS[id % PERSON_COLORS.length];
+
+    // Articulaciones individuales
+    for (const part of ALL_PARTS) {
+      const pt   = getPt(id, part);
+      if (!pt) continue;
+      const heat = poseVelocity[`/pose/${id}/${part}`] || 0;
+      const [r, g, b] = heatColor(base, heat);
+      seedAtNorm(pt.x, pt.y, pt.z, r, g, b, JOINT_RADIUS[part] || 1);
+    }
+
+    // Huesos — segmentos entre articulaciones
+    for (const [partA, partB] of BONES) {
+      const ptA = getPt(id, partA);
+      const ptB = getPt(id, partB);
+      if (!ptA || !ptB) continue;
+      const heatA = poseVelocity[`/pose/${id}/${partA}`] || 0;
+      const heatB = poseVelocity[`/pose/${id}/${partB}`] || 0;
+      const [r, g, b] = heatColor(base, (heatA + heatB) * 0.5);
+      seedBone(ptA, ptB, r, g, b, 7, 1);
     }
   }
 
@@ -192,9 +289,9 @@ function draw() {
 
   // ── Dibujar células ────────────────────────────────────────────────────────
   fill(255);
-  const half    = GRID * CELL_SIZE * 0.5;
-  const SRAD    = CELL_SIZE * 0.5;
-  let   active  = 0;
+  const half = GRID * CELL_SIZE * 0.5;
+  const SRAD = CELL_SIZE * 0.5;
+  let   active = 0;
 
   for (let z = 0; z < GRID; z++)
     for (let y = 0; y < GRID; y++)
@@ -205,13 +302,11 @@ function draw() {
 
         const age = cellAge[i];
         const t   = Math.min(age / 35, 1.0);
-        // Joven = blanco brillante → envejece hacia color siembra
-        const r = lerp(255, cellR[i] || 0,   t);
-        const g = lerp(255, cellG[i] || 160, t);
-        const b = lerp(255, cellB[i] || 255, t);
+        const r   = lerp(255, cellR[i] || 0,   t);
+        const g   = lerp(255, cellG[i] || 160, t);
+        const b   = lerp(255, cellB[i] || 255, t);
 
-        // emissiveMaterial hace que la esfera brille sin depender solo de luces
-        emissiveMaterial(r * 0.35, g * 0.35, b * 0.35);
+        emissiveMaterial(r * 0.4, g * 0.4, b * 0.4);
         specularMaterial(r, g, b);
         shininess(60);
 
@@ -260,7 +355,7 @@ function keyPressed() {
   }
   if (key === 'f' || key === 'F') {
     const el = document.querySelector('canvas');
-    if (el.requestFullscreen)       el.requestFullscreen();
+    if (el.requestFullscreen)           el.requestFullscreen();
     else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
   }
   if (key === ' ') autoRotate = !autoRotate;
