@@ -1,185 +1,138 @@
-# Feria de Ciencias 2026
+# Feria de Ciencias 2026 — ArtPose Vision
 
-## ArtPose-Vision (OAK-D + Jetson Orin NX)
-
-Sistema de arte generativo en tiempo real que usa detección de pose humana como un pincel digital sobre hardware Edge AI.
+Sistema de arte generativo en tiempo real: pose humana detectada por la OAK-D como pincel digital sobre un autómata celular 3D.
 
 ## Arquitectura
 
-- **Capa de percepción**: OAK-D Lite ejecutando inferencia de pose en el dispositivo.
-- **Capa de procesamiento**: Jetson Orin NX administrando DepthAI, normalización de coordenadas y transmisión de eventos.
-- **Capa creativa**: p5.js renderizando visuales reactivos a partir de mensajes OSC.
+```
+OAK-D (Myriad X)  →  inferencia pose (human-pose-estimation-0001)
+        ↓
+RPi 5 / Jetson    →  decodifica landmarks → OSC UDP
+        ↓  :12000
+Windows Node.js   →  bridge OSC → WebSocket :8081
+        ↓
+p5.js WebGL       →  autómata celular 3D reactivo a pose
+```
 
 ## Estructura del repositorio
 
-```text
+```
 Feria-de-Ciencias-2026/
 ├── setup_jetson.sh
+├── setup_rpi5.sh                        ← setup para Raspberry Pi 5
 ├── backend/
-│   ├── blazepose_publisher.py
+│   ├── blazepose_publisher.py           ← publisher mock / depthai básico
+│   ├── blazepose_oak_rpi5.py            ← inferencia real Myriad X (RPi 5)
 │   ├── camera_probe.py
 │   ├── camera_test.py
+│   ├── requirements.txt
 │   ├── requirements-jetson.txt
-│   └── requirements.txt
+│   └── requirements-rpi5.txt
 └── frontend/
     ├── bridge/
     │   ├── package.json
-    │   └── server.js
+    │   └── server.js                    ← bridge OSC UDP → WebSocket
     └── p5/
         ├── index.html
-        └── sketch.js
+        └── sketch.js                    ← autómata celular 3D WebGL
 ```
 
-## Estado actual
+---
 
-Este repo queda preparado para:
-
-- verificar la conexión OAK-D desde Jetson
-- validar el canal OSC en `127.0.0.1:12000`
-- probar visuales reactivas en p5.js con un emisor de pose simulado
-
-La parte de inferencia específica de BlazePose en la VPU se deja desacoplada del transmisor OSC para que puedas conectar el modelo/exportador OpenVINO que decidas usar sin rehacer la arquitectura del sistema.
-
-## Backend
-
-### Jetson Orin NX
-
-Flujo recomendado en Jetson:
+## Raspberry Pi 5 + OAK-D (setup completo)
 
 ```bash
-chmod +x setup_jetson.sh
-./setup_jetson.sh
+git clone https://github.com/JRavenelco/Feria-de-Ciencias-2026.git repo-feria
+cd repo-feria
+bash setup_rpi5.sh
 ```
 
-Este script:
+El script configura udev, `usbfs_memory_mb` y el entorno virtual automáticamente.
 
-- crea `.venv`
-- instala dependencias mínimas de `backend/requirements-jetson.txt`
-- valida `DepthAI`
-- ejecuta una prueba headless de la OAK-D con `backend/camera_probe.py`
-
-Si quieres correr la prueba manualmente:
+### Arrancar inferencia real (Myriad X)
 
 ```bash
 source .venv/bin/activate
-python backend/camera_probe.py --seconds 10 --width 640 --height 480 --fps 30
+python backend/blazepose_oak_rpi5.py --host <IP_WINDOWS> --port 12000
 ```
 
-### 1) Crear entorno
+### Arrancar solo mock (sin cámara)
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r backend/requirements.txt
+source .venv/bin/activate
+python backend/blazepose_publisher.py --mode mock --host <IP_WINDOWS> --port 12000
 ```
 
-### 2) Verificar cámara OAK-D
+---
 
-```bash
-python backend/camera_test.py
-```
+## Windows — Frontend
 
-Esto abre una ventana con el stream RGB si la OAK-D Lite está conectada correctamente.
+Orden de arranque:
 
-Para un entorno sin interfaz gráfica o por SSH:
+### 1. Bridge OSC → WebSocket
 
-```bash
-python backend/camera_probe.py --seconds 10
-```
-
-Esto imprime `frames`, `avg_fps` y resolución detectada sin abrir ventanas.
-
-### 3) Probar transmisor OSC
-
-```bash
-python backend/blazepose_publisher.py --mode mock --host 127.0.0.1 --port 12000
-```
-
-Para validar acceso real a la OAK-D desde Jetson:
-
-```bash
-python backend/blazepose_publisher.py --mode depthai --host 127.0.0.1 --port 12000
-```
-
-Mensajes emitidos:
-
-- `/pose/wrist/L [x, y, z]`
-- `/pose/wrist/R [x, y, z]`
-- `/pose/elbow/L [x, y, z]`
-- `/pose/elbow/R [x, y, z]`
-- `/pose/shoulder/L [x, y, z]`
-- `/pose/shoulder/R [x, y, z]`
-- `/pose/nose [x, y, z]`
-
-## Frontend
-
-### 1) Instalar puente OSC -> WebSocket
-
-```bash
+```powershell
+cd frontend\bridge
 npm install
 node server.js
 ```
 
-Ejecuta esto dentro de `frontend/bridge`.
+Debe mostrar:
+```
+OSC listening on 0.0.0.0:12000
+WebSocket on ws://127.0.0.1:8081
+```
 
-El puente escucha OSC UDP en `12000` y publica eventos al navegador por WebSocket en `ws://127.0.0.1:8081`.
+### 2. Servidor p5.js
 
-### 2) Abrir la pieza p5.js
+```powershell
+npx --yes serve -l 3000 "C:\ruta\a\Feria-de-Ciencias-2026\frontend\p5"
+```
 
-Sirve `frontend/p5` con cualquier servidor estático y abre `index.html`.
+Abre: **`http://localhost:3000`**
 
-Ejemplo:
+### 3. Firewall (solo la primera vez, como Administrador)
+
+```powershell
+netsh advfirewall firewall add rule name="OSC-ArtPose" dir=in action=allow protocol=UDP localport=12000
+```
+
+---
+
+## Jetson Orin NX (setup original)
 
 ```bash
-python -m http.server 8080
+chmod +x setup_jetson.sh
+./setup_jetson.sh
+source .venv/bin/activate
+python backend/blazepose_publisher.py --mode depthai --host <IP_WINDOWS> --port 12000
 ```
 
-Luego visita `http://127.0.0.1:8080/frontend/p5/` si lo ejecutas desde la raíz del repo, o sirve directamente esa carpeta.
+---
 
-## Flujo recomendado de validación
+## Mensajes OSC publicados
 
-1. Conectar OAK-D Lite a la Jetson.
-2. Ejecutar `python backend/camera_test.py`.
-3. Ejecutar `node frontend/bridge/server.js`.
-4. Ejecutar `python backend/blazepose_publisher.py --mode mock`.
-5. Abrir `frontend/p5/index.html`.
-6. Verificar que las estelas reaccionan al movimiento enviado por OSC.
+| Dirección          | Valores   |
+|--------------------|-----------|
+| `/pose/wrist/L`    | `[x,y,z]` |
+| `/pose/wrist/R`    | `[x,y,z]` |
+| `/pose/elbow/L`    | `[x,y,z]` |
+| `/pose/elbow/R`    | `[x,y,z]` |
+| `/pose/shoulder/L` | `[x,y,z]` |
+| `/pose/shoulder/R` | `[x,y,z]` |
+| `/pose/nose`       | `[x,y,z]` |
 
-## Siguiente integración real de pose
+Coordenadas normalizadas 0–1. `z` = estimación de profundidad.
 
-El siguiente paso es conectar el modelo de pose de DepthAI al publicador OSC. La interfaz esperada es un diccionario por persona con esta forma:
+---
 
-```json
-{
-  "id": 0,
-  "landmarks": {
-    "wrist_l": [x, y, z],
-    "wrist_r": [x, y, z],
-    "elbow_l": [x, y, z],
-    "elbow_r": [x, y, z],
-    "shoulder_l": [x, y, z],
-    "shoulder_r": [x, y, z],
-    "nose": [x, y, z]
-  }
-}
-```
+## Controles del sketch 3D
 
-Puedes reemplazar el generador `mock_pose_frames()` por la salida del pipeline real sin tocar el frontend.
+| Control | Acción |
+|---------|--------|
+| Arrastrar | Rotar escena |
+| Scroll | Zoom |
+| `R` | Reiniciar autómata |
+| `T` | Sembrar células aleatorias |
 
-## GitHub
-
-GitHub no permite espacios en el nombre técnico del repositorio. Para publicarlo, te recomiendo usar:
-
-```text
-Feria-de-Ciencias-2026
-```
-
-Y conservar `Feria de Ciencias 2026` como título del proyecto en el `README`.
-
-## Próximos pasos sugeridos
-
-- integrar BlazePose/OpenVINO directamente en la OAK-D Lite
-- asignar color por `person_id`
-- suavizar landmarks con filtro temporal adicional
-- mapear `z` a grosor, opacidad y dispersión de partículas
-- añadir soporte para múltiples personas
+Las muñecas siembran células en el volumen 3D: izquierda = cyan, derecha = magenta.
