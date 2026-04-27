@@ -223,33 +223,27 @@ def app_callback(pad, info, user_data: PoseCallbackData):
         if diag:
             print(f"  [landmark points n={len(points)}]", flush=True)
 
-        # Extraer keypoints relevantes → normalizar a [0,1] en imagen completa.
-        # Nota: el post-processor TAPPAS de YOLOv8-pose NO popula confianzas
-        # por keypoint, así que NO filtramos por visibilidad — confiamos en
-        # la confianza global de la detección (>=0.40 ya filtrado arriba).
-        # Sí descartamos keypoints fuera de [0,1] por si el bbox los empuja.
-        # Centro del bbox en coordenadas normalizadas de frame [0,1]
-        cx = bbox.xmin() + bbox.width()  * 0.5
-        cy = bbox.ymin() + bbox.height() * 0.5
-        hw = bbox.width()  * 0.5   # semi-ancho
-        hh = bbox.height() * 0.5   # semi-alto
-
+        # Extraer keypoints → TAPPAS yolov8pose_post.so devuelve keypoints
+        # ya normalizados al FRAME COMPLETO en [0,1] (misma convención que
+        # usa el OAK BlazePose publisher al dividir pixeles entre img_w/img_h).
+        # NO hay que offsetear por el bbox.
+        # El post-processor NO popula confianzas por keypoint, así que no
+        # filtramos por visibilidad.
         lm = {}
         for kp_name, kp_idx in KP.items():
             if kp_idx >= len(points):
                 continue
             pt = points[kp_idx]
 
-            # TAPPAS 'filter' usa origen en el CENTRO del bbox, rango ≈[-2,2].
-            # x_norm = cx + pt.x * hw,  y_norm = cy + pt.y * hh
-            x_raw = cx + pt.x() * hw
-            y_raw = cy + pt.y() * hh
+            x_raw = pt.x()
+            y_raw = pt.y()
 
             if diag and kp_idx == 0:
-                print(f"  [nose] pt=({pt.x():.3f},{pt.y():.3f}) "
-                      f"→ frame({x_raw:.3f},{y_raw:.3f})", flush=True)
+                print(f"  [nose] pt=({x_raw:.3f},{y_raw:.3f}) "
+                      f"bbox=({bbox.xmin():.2f},{bbox.ymin():.2f},"
+                      f"{bbox.width():.2f},{bbox.height():.2f})", flush=True)
 
-            # Clamp: keypoints en extremos del frame pueden salir ±ε de [0,1]
+            # Clamp defensivo: ±ε fuera de [0,1] ocurre en extremos del frame.
             x_norm = float(np.clip(x_raw, 0.0, 1.0))
             y_norm = float(np.clip(y_raw, 0.0, 1.0))
             lm[kp_name] = (x_norm, y_norm, 0.0)
