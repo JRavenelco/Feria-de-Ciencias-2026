@@ -10,3 +10,5 @@ node_modules/
 Thumbs.db
 *.log
 frontend/bridge/package-lock.json
+frontend/bridge/captures/
+frontend/p5/sketch.*.bak.js

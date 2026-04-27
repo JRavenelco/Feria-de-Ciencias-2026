@@ -25,8 +25,10 @@
 //    - Karl Sims, Reaction-Diffusion Tutorial.
 //    - jasonwebb/reaction-diffusion-playground (referencia de implementación GPU).
 
-// ── Conexión OSC ─────────────────────────────────────────────────────────────
-const WS_URL      = 'ws://127.0.0.1:8081';
+// ── Conexión con el bridge ─────────────────────────────────────────────────────────
+const BRIDGE_HOST = (location.hostname && location.hostname !== '') ? location.hostname : '127.0.0.1';
+const WS_URL      = `ws://${BRIDGE_HOST}:8081`;
+const HTTP_URL    = `http://${BRIDGE_HOST}:8082`;
 const MAX_PERSONS = 8;
 const DEBUG       = window.location.hash.includes('debug');
 
@@ -88,14 +90,14 @@ let dt = 1.00;
 // Fuerza de la modulación por proximidad al cuerpo
 let skinStrength = 1.0;
 
-// Paleta del display
+// Paleta del display — todas con fondo negro puro para máximo contraste.
 let paletteIdx = 0;
 const PALETTES = [
   // [color de fondo,                color medio,             highlight]
-  [[ 4,  6, 16], [ 60, 200, 220], [255, 240, 200]],   // cyan eléctrico
-  [[10,  4, 22], [200,  60, 220], [255, 220, 100]],   // magenta hot
-  [[ 4, 16,  8], [ 80, 240,  90], [240, 255, 200]],   // verde fluorescente
-  [[20,  8,  2], [240, 130,  20], [255, 240, 200]],   // dorado
+  [[ 0,  0,  0], [ 60, 200, 220], [255, 240, 200]],   // cyan eléctrico
+  [[ 0,  0,  0], [200,  60, 220], [255, 220, 100]],   // magenta hot
+  [[ 0,  0,  0], [ 80, 240,  90], [240, 255, 200]],   // verde fluorescente
+  [[ 0,  0,  0], [240, 130,  20], [255, 240, 200]],   // dorado
   [[ 0,  0,  0], [180, 180, 180], [255, 255, 255]],   // monocromo
 ];
 
@@ -327,6 +329,8 @@ function rebuildPoseUniforms() {
 // ── p5 lifecycle ─────────────────────────────────────────────────────────────
 function setup() {
   pixelDensity(1);
+  // preserveDrawingBuffer permite leer el canvas con toBlob() después del frame.
+  setAttributes('preserveDrawingBuffer', true);
   createCanvas(windowWidth, windowHeight, WEBGL);
   noStroke();
   frameRate(60);
@@ -416,7 +420,7 @@ function draw() {
       `&nbsp;&nbsp;personas:&nbsp;${activePeople}` +
       `&nbsp;&nbsp;|&nbsp;&nbsp;Gray-Scott f=${baseFeed.toFixed(3)} k=${baseKill.toFixed(3)}` +
       `&nbsp;&nbsp;huesos:${numBones}&nbsp;joints:${numJoints}` +
-      `&nbsp;&nbsp;|&nbsp;&nbsp;<b>1-5</b> paleta&nbsp;&nbsp;<b>q/a w/s</b> f/k&nbsp;&nbsp;<b>r</b> reset&nbsp;&nbsp;<b>F</b> fullscreen` +
+      `&nbsp;&nbsp;|&nbsp;&nbsp;<b>1-5</b> paleta&nbsp;&nbsp;<b>q/a w/s</b> f/k&nbsp;&nbsp;<b>p</b> foto+QR&nbsp;&nbsp;<b>r</b> reset&nbsp;&nbsp;<b>F</b> fullscreen` +
       (DEBUG ? `&nbsp;&nbsp;<span style="color:#ff8a3a">debug</span>` : '');
   }
 }
@@ -432,6 +436,8 @@ function resetSim() {
 
 function keyPressed() {
   if (key === 'r' || key === 'R') resetSim();
+  if (key === 'p' || key === 'P') captureAndShare();
+  if (keyCode === ESCAPE)         closeCaptureOverlay();
   if (key === 'f' || key === 'F') {
     const el = document.querySelector('canvas');
     if (el.requestFullscreen)            el.requestFullscreen();
@@ -455,4 +461,58 @@ function keyPressed() {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+}
+
+// ── Captura + QR ───────────────────────────────────────────────────────────────────────
+async function captureAndShare() {
+  const overlay = document.getElementById('capture-overlay');
+  const status  = overlay.querySelector('.status');
+  const qrBox   = overlay.querySelector('.qr');
+  const urlEl   = overlay.querySelector('.url');
+
+  overlay.style.display = 'flex';
+  status.textContent = 'Capturando frame…';
+  qrBox.innerHTML = '';
+  urlEl.textContent = '';
+  urlEl.removeAttribute('href');
+
+  const cv = document.querySelector('canvas');
+  if (!cv) { status.textContent = 'No hay canvas para capturar.'; return; }
+
+  // toBlob es asíncrono — envolverlo en Promise
+  const blob = await new Promise((resolve) => cv.toBlob(resolve, 'image/png'));
+  if (!blob) { status.textContent = 'No se pudo generar PNG (¿WebGL en blank?).'; return; }
+
+  status.textContent = `Subiendo ${(blob.size / 1024).toFixed(0)} KB al bridge…`;
+
+  try {
+    const r = await fetch(`${HTTP_URL}/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body:    blob,
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+
+    status.textContent = 'Escanea el código QR con tu teléfono para descargar tu captura.';
+    urlEl.textContent  = data.url;
+    urlEl.href         = data.url;
+
+    if (typeof qrcode === 'function') {
+      const qr = qrcode(0, 'M');
+      qr.addData(data.url);
+      qr.make();
+      qrBox.innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    } else {
+      qrBox.textContent = '(librería QR no disponible)';
+    }
+  } catch (err) {
+    status.textContent = `Error subiendo: ${err.message}. Revisa que el bridge tenga el HTTP server activo (puerto 8082).`;
+    console.error('[capture] error:', err);
+  }
+}
+
+function closeCaptureOverlay() {
+  const overlay = document.getElementById('capture-overlay');
+  if (overlay) overlay.style.display = 'none';
 }

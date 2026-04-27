@@ -21,11 +21,70 @@
         background:rgba(6,8,20,.8); color:#a0beff;
         font-family:'Courier New',monospace; font-size:13px;
         pointer-events:none; z-index:10; }
+
+      /* ── Overlay de captura + QR ─────────────────────────────────────── */
+      #capture-overlay {
+        position: fixed; inset: 0; z-index: 100;
+        display: none;            /* se muestra desde JS al presionar 'p' */
+        align-items: center; justify-content: center;
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(8px);
+        font-family: 'Courier New', monospace;
+        color: #f0f0f0;
+      }
+      #capture-overlay .panel {
+        background: #0c0e1c;
+        border: 1px solid #2c3050;
+        border-radius: 14px;
+        padding: 28px 36px;
+        max-width: 90vw;
+        text-align: center;
+      }
+      #capture-overlay h2 {
+        margin: 0 0 6px; font-size: 22px; color: #46dc82;
+        letter-spacing: 0.04em;
+      }
+      #capture-overlay .status {
+        margin: 0 0 18px; font-size: 14px; color: #a0beff; min-height: 20px;
+      }
+      #capture-overlay .qr {
+        background: white; padding: 12px;
+        display: inline-block; border-radius: 8px;
+        min-width: 240px; min-height: 240px;
+      }
+      #capture-overlay .qr svg { display: block; width: 240px; height: 240px; }
+      #capture-overlay .url {
+        display: block; margin-top: 16px; word-break: break-all;
+        font-size: 12px; color: #74e2ff; text-decoration: none;
+      }
+      #capture-overlay .hint {
+        margin-top: 14px; font-size: 12px; color: #708090;
+      }
     </style>
   </head>
   <body>
     <div id="hud">Iniciando…</div>
+
+    <div id="capture-overlay" role="dialog" aria-modal="true">
+      <div class="panel">
+        <h2>📸 Tu Morfogénesis</h2>
+        <p class="status">…</p>
+        <div class="qr"></div>
+        <a class="url" target="_blank" rel="noopener"></a>
+        <p class="hint">Presiona <b>ESC</b> o haz clic afuera para cerrar.</p>
+      </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="./sketch.js"></script>
+    <script>
+      // Cerrar el overlay al hacer clic en el fondo (no en el panel).
+      document.getElementById('capture-overlay').addEventListener('click', (ev) => {
+        if (ev.target.id === 'capture-overlay') {
+          ev.currentTarget.style.display = 'none';
+        }
+      });
+    </script>
   </body>
 </html>
