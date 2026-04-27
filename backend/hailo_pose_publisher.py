@@ -70,7 +70,31 @@ class _FixedPoseApp(GStreamerPoseEstimationApp):
             # necesita procesar frames y emitir OSC, sin ventana de video.
             s = s.replace('video-sink=autovideosink', 'video-sink=fakesink')
             s = s.replace('autovideosink',           'fakesink')
+        # La cámara CSI imx708 wide queda montada al revés en el rig actual.
+        # Reemplazamos el espejo horizontal default por rotación 180° para que
+        # YOLOv8-pose vea personas en orientación correcta.
+        s = s.replace('video-direction=horiz', 'video-direction=180')
+        print('[fixed-app] pipeline string len=%d  contiene video-direction=180? %s'
+              % (len(s), 'video-direction=180' in s), flush=True)
         return s
+
+    def create_pipeline(self):
+        """Tras construir el pipeline, refuerza la rotación 180° por si la
+        sustitución de la cadena no llegó al elemento videoflip por algún
+        camino interno del framework."""
+        super().create_pipeline()
+        try:
+            flip = self.pipeline.get_by_name('videoflip')
+            if flip is not None:
+                # Enum GstVideoFlipMethod: 2 = 180° rotation
+                flip.set_property('video-direction', 2)
+                print('[fixed-app] videoflip.video-direction forzado a 180°',
+                      flush=True)
+            else:
+                print('[fixed-app] WARNING: no encontré elemento videoflip',
+                      flush=True)
+        except Exception as e:
+            print(f'[fixed-app] no pude setear rotación: {e}', flush=True)
 
 # ── COCO keypoints relevantes ────────────────────────────────────────────────
 KP = {
@@ -165,7 +189,16 @@ def app_callback(pad, info, user_data: PoseCallbackData):
     roi        = hailo.get_roi_from_buffer(buffer)
     detections = roi.get_objects_typed(hailo.HAILO_DETECTION)
 
+    # Diag: cada 60 frames imprime TODAS las detecciones crudas (cualquier label,
+    # cualquier confianza) para diagnosticar si el detector ve algo aunque sea
+    # con confianza baja.
+    if user_data.get_count() % 60 == 0 and len(detections) > 0:
+        raw = [(d.get_label(), round(d.get_confidence(), 2)) for d in detections]
+        print(f"  [raw-det n={len(detections)}] {raw[:8]}", flush=True)
+
     persons = {}
+
+    diag = (user_data.get_count() % 60 == 0)
 
     for detection in detections:
         if detection.get_label() != 'person':
@@ -180,13 +213,19 @@ def app_callback(pad, info, user_data: PoseCallbackData):
         bbox = detection.get_bbox()
 
         landmarks_objs = detection.get_objects_typed(hailo.HAILO_LANDMARKS)
+        if diag:
+            print(f"  [det conf={detection.get_confidence():.2f} bbox=({bbox.xmin():.2f},{bbox.ymin():.2f},{bbox.width():.2f},{bbox.height():.2f}) "
+                  f"track={len(track_objs)} landmarks_objs={len(landmarks_objs)}]", flush=True)
         if not landmarks_objs:
             continue
 
         points = landmarks_objs[0].get_points()
+        if diag:
+            print(f"  [landmark points n={len(points)}]", flush=True)
 
         # Extraer keypoints relevantes → normalizar a [0,1] en imagen completa
         lm = {}
+        kept = 0
         for kp_name, kp_idx in KP.items():
             if kp_idx >= len(points):
                 continue
@@ -197,7 +236,11 @@ def app_callback(pad, info, user_data: PoseCallbackData):
             vis    = pt.confidence() if hasattr(pt, 'confidence') else 1.0
             if vis < 0.15:
                 continue
+            kept += 1
             lm[kp_name] = (float(x_norm), float(y_norm), 0.0)
+
+        if diag:
+            print(f"  [kp survived vis>=0.15: {kept}/{len(KP)}]", flush=True)
 
         if not lm:
             continue
@@ -209,8 +252,9 @@ def app_callback(pad, info, user_data: PoseCallbackData):
 
         persons[pid] = lm
 
-    if persons:
-        user_data.publisher.publish_frame(persons)
+    # Publicar SIEMPRE — aunque persons esté vacío. publish_frame() emite
+    # /pose/count = 0 lo cual es heartbeat valioso para el bridge / sketch.
+    user_data.publisher.publish_frame(persons)
 
     # Log periódico: ~cada 60 frames (~4 s a 15 fps)
     fc = user_data.get_count()
