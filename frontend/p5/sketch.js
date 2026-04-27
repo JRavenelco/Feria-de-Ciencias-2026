@@ -226,7 +226,9 @@ void main() {
 
 // ── Variables p5 ─────────────────────────────────────────────────────────────
 let bufA, bufB;
-let rdShader, dispShader;
+// Cada p5.Graphics(WEBGL) tiene su propio contexto, por eso necesitamos un
+// shader RD por buffer (no se pueden compartir entre contextos en p5).
+let rdShaderA, rdShaderB, dispShader;
 let pingPongFlip = 0;          // 0 → leer A, escribir B; 1 → leer B, escribir A
 
 // ── Setup / WebSocket ────────────────────────────────────────────────────────
@@ -327,16 +329,22 @@ function setup() {
   noStroke();
   frameRate(60);
 
-  rdShader   = createShader(VERT_SRC, RD_FRAG_SRC);
+  // Shader de presentación: vive en el canvas principal.
   dispShader = createShader(VERT_SRC, DISP_FRAG_SRC);
 
-  // Buffers de simulación
+  // Buffers de simulación (cada uno con su propio contexto WebGL).
   bufA = createGraphics(SIM_W, SIM_H, WEBGL);
   bufB = createGraphics(SIM_W, SIM_H, WEBGL);
   bufA.pixelDensity(1);
   bufB.pixelDensity(1);
   bufA.noStroke();
   bufB.noStroke();
+
+  // Shaders RD bound a cada contexto. Cuando escribimos en bufA usamos
+  // rdShaderA (que vive en el contexto de bufA); cuando escribimos en
+  // bufB usamos rdShaderB.
+  rdShaderA = bufA.createShader(VERT_SRC, RD_FRAG_SRC);
+  rdShaderB = bufB.createShader(VERT_SRC, RD_FRAG_SRC);
 
   // Estado inicial: U=1 en todas partes, V=0 (codificado como rojo puro).
   bufA.background(255, 0, 0);
@@ -352,23 +360,24 @@ function setup() {
 function runRDIteration() {
   const src = (pingPongFlip === 0) ? bufA : bufB;
   const dst = (pingPongFlip === 0) ? bufB : bufA;
+  // El shader debe pertenecer al contexto del destino.
+  const sh  = (pingPongFlip === 0) ? rdShaderB : rdShaderA;
 
-  dst.shader(rdShader);
-  rdShader.setUniform('uState',        src);
-  rdShader.setUniform('uResolution',   [SIM_W, SIM_H]);
-  rdShader.setUniform('uDt',           dt);
-  rdShader.setUniform('uDu',           dU);
-  rdShader.setUniform('uDv',           dV);
-  rdShader.setUniform('uFeed',         baseFeed);
-  rdShader.setUniform('uKill',         baseKill);
-  rdShader.setUniform('uSkinStrength', skinStrength);
-  rdShader.setUniform('uBoneCount',    numBones);
-  rdShader.setUniform('uBones',        boneArr);
-  rdShader.setUniform('uJointCount',   numJoints);
-  rdShader.setUniform('uJoints',       jointArr);
+  dst.shader(sh);
+  sh.setUniform('uState',        src);
+  sh.setUniform('uResolution',   [SIM_W, SIM_H]);
+  sh.setUniform('uDt',           dt);
+  sh.setUniform('uDu',           dU);
+  sh.setUniform('uDv',           dV);
+  sh.setUniform('uFeed',         baseFeed);
+  sh.setUniform('uKill',         baseKill);
+  sh.setUniform('uSkinStrength', skinStrength);
+  sh.setUniform('uBoneCount',    numBones);
+  sh.setUniform('uBones',        boneArr);
+  sh.setUniform('uJointCount',   numJoints);
+  sh.setUniform('uJoints',       jointArr);
 
-  // Quad full-screen: usar plane() en vez de rect() para evitar problemas
-  // de bordes en algunos drivers WebGL.
+  // Quad full-screen.
   dst.plane(SIM_W, SIM_H);
 
   pingPongFlip = 1 - pingPongFlip;
