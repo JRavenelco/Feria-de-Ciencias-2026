@@ -223,24 +223,24 @@ def app_callback(pad, info, user_data: PoseCallbackData):
         if diag:
             print(f"  [landmark points n={len(points)}]", flush=True)
 
-        # Extraer keypoints relevantes → normalizar a [0,1] en imagen completa
+        # Extraer keypoints relevantes → normalizar a [0,1] en imagen completa.
+        # Nota: el post-processor TAPPAS de YOLOv8-pose NO popula confianzas
+        # por keypoint, así que NO filtramos por visibilidad — confiamos en
+        # la confianza global de la detección (>=0.40 ya filtrado arriba).
+        # Sí descartamos keypoints fuera de [0,1] por si el bbox los empuja.
         lm = {}
-        kept = 0
         for kp_name, kp_idx in KP.items():
             if kp_idx >= len(points):
                 continue
             pt = points[kp_idx]
-            # Los puntos de Hailo están relativos al bounding box
             x_norm = pt.x() * bbox.width()  + bbox.xmin()
             y_norm = pt.y() * bbox.height() + bbox.ymin()
-            vis    = pt.confidence() if hasattr(pt, 'confidence') else 1.0
-            if vis < 0.15:
+            if not (0.0 <= x_norm <= 1.0 and 0.0 <= y_norm <= 1.0):
                 continue
-            kept += 1
             lm[kp_name] = (float(x_norm), float(y_norm), 0.0)
 
         if diag:
-            print(f"  [kp survived vis>=0.15: {kept}/{len(KP)}]", flush=True)
+            print(f"  [kp extraidos: {len(lm)}/{len(KP)}]", flush=True)
 
         if not lm:
             continue
