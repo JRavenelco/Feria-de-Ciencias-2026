@@ -181,7 +181,7 @@ def app_callback(pad, info, user_data: PoseCallbackData):
             x_norm = pt.x() * bbox.width()  + bbox.xmin()
             y_norm = pt.y() * bbox.height() + bbox.ymin()
             vis    = pt.confidence() if hasattr(pt, 'confidence') else 1.0
-            if vis < 0.3:
+            if vis < 0.15:
                 continue
             lm[kp_name] = (float(x_norm), float(y_norm), 0.0)
 
