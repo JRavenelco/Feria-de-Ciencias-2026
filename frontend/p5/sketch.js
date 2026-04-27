@@ -53,8 +53,8 @@ const BONES = [
 ];
 
 // MAX_* deben coincidir con las constantes en los shaders.
-const MAX_BONES  = 128;        // 8 personas × 14 huesos = 112  (margen)
-const MAX_JOINTS = 128;        // 8 personas × 13 joints = 104  (margen)
+const MAX_BONES  = 64;         // límite WebGL1 portable; suficiente para 4 personas
+const MAX_JOINTS = 64;
 
 // ── Estado de pose recibido por OSC ──────────────────────────────────────────
 const pose         = {};   // /pose/{id}/{part} → [x,y,z]
@@ -118,8 +118,8 @@ void main() {
 const RD_FRAG_SRC = `
 precision highp float;
 
-#define MAX_BONES  128
-#define MAX_JOINTS 128
+#define MAX_BONES  64
+#define MAX_JOINTS 64
 
 varying vec2 vTexCoord;
 uniform sampler2D uState;
@@ -367,8 +367,9 @@ function runRDIteration() {
   rdShader.setUniform('uJointCount',   numJoints);
   rdShader.setUniform('uJoints',       jointArr);
 
-  // Quad full-screen en coordenadas WEBGL
-  dst.rect(-SIM_W / 2, -SIM_H / 2, SIM_W, SIM_H);
+  // Quad full-screen: usar plane() en vez de rect() para evitar problemas
+  // de bordes en algunos drivers WebGL.
+  dst.plane(SIM_W, SIM_H);
 
   pingPongFlip = 1 - pingPongFlip;
 }
@@ -392,7 +393,7 @@ function draw() {
   dispShader.setUniform('uColorBg',  pal[0].map(c => c / 255));
   dispShader.setUniform('uColorMid', pal[1].map(c => c / 255));
   dispShader.setUniform('uColorHi',  pal[2].map(c => c / 255));
-  rect(-width / 2, -height / 2, width, height);
+  plane(width, height);
 
   // HUD
   let activePeople = 0;
