@@ -233,14 +233,25 @@ def app_callback(pad, info, user_data: PoseCallbackData):
             if kp_idx >= len(points):
                 continue
             pt = points[kp_idx]
-            x_norm = pt.x() * bbox.width()  + bbox.xmin()
-            y_norm = pt.y() * bbox.height() + bbox.ymin()
-            if not (0.0 <= x_norm <= 1.0 and 0.0 <= y_norm <= 1.0):
-                continue
-            lm[kp_name] = (float(x_norm), float(y_norm), 0.0)
+            x_raw = pt.x() * bbox.width()  + bbox.xmin()
+            y_raw = pt.y() * bbox.height() + bbox.ymin()
+
+            # Diagnóstico: imprime valores crudos del primer KP visible
+            if diag and kp_idx == 0:
+                print(f"  [RAW nose] pt=({pt.x():.4f},{pt.y():.4f})  "
+                      f"bbox=({bbox.xmin():.3f},{bbox.ymin():.3f},"
+                      f"{bbox.width():.3f},{bbox.height():.3f})  "
+                      f"→ x={x_raw:.4f} y={y_raw:.4f}", flush=True)
+
+            # Clamp en vez de descartar: keypoints en extremos del frame
+            # pueden salir ligeramente de [0,1] y son válidos.
+            x_norm = float(np.clip(x_raw, 0.0, 1.0))
+            y_norm = float(np.clip(y_raw, 0.0, 1.0))
+            lm[kp_name] = (x_norm, y_norm, 0.0)
 
         if diag:
-            print(f"  [kp extraidos: {len(lm)}/{len(KP)}]", flush=True)
+            sample = {k: f"({v[0]:.2f},{v[1]:.2f})" for k,v in list(lm.items())[:4]}
+            print(f"  [kp extraidos: {len(lm)}/{len(KP)}] {sample}", flush=True)
 
         if not lm:
             continue
