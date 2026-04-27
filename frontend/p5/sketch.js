@@ -100,17 +100,19 @@ const PALETTES = [
 ];
 
 // ── Shaders ──────────────────────────────────────────────────────────────────
-// Vertex shader compartido — pasa coords de textura tal cual.
+// Vertex shader compartido — usa las matrices que p5 setea automáticamente.
+// Esto es lo que permite usar plane()/rect() del API de p5 sin hacer la
+// conversión a clip-space a mano.
 const VERT_SRC = `
 precision highp float;
 attribute vec3 aPosition;
 attribute vec2 aTexCoord;
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
 varying vec2 vTexCoord;
 void main() {
   vTexCoord = aTexCoord;
-  vec4 p = vec4(aPosition, 1.0);
-  p.xy = p.xy * 2.0 - 1.0;
-  gl_Position = p;
+  gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aPosition, 1.0);
 }
 `;
 
