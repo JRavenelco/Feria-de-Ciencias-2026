@@ -52,11 +52,25 @@ _CORRECT_FN = 'filter'
 
 
 class _FixedPoseApp(GStreamerPoseEstimationApp):
-    """Subclase que corrige las rutas del post-processor para esta instalación."""
+    """Subclase que:
+       1) corrige las rutas del post-processor para esta instalación,
+       2) sustituye `autovideosink` por `fakesink` para correr headless
+          (Pi en sesión tty/SSH sin display X11/Wayland accesible).
+    """
+    def __init__(self, *args, headless: bool = True, **kwargs):
+        self._headless = headless
+        super().__init__(*args, **kwargs)
+
     def get_pipeline_string(self):
         self.post_process_so       = _CORRECT_SO
         self.post_process_function = _CORRECT_FN
-        return super().get_pipeline_string()
+        s = super().get_pipeline_string()
+        if self._headless:
+            # Reemplaza el sink de despliegue por fakesink. El publisher solo
+            # necesita procesar frames y emitir OSC, sin ventana de video.
+            s = s.replace('video-sink=autovideosink', 'video-sink=fakesink')
+            s = s.replace('autovideosink',           'fakesink')
+        return s
 
 # ── COCO keypoints relevantes ────────────────────────────────────────────────
 KP = {
@@ -197,6 +211,14 @@ def app_callback(pad, info, user_data: PoseCallbackData):
 
     if persons:
         user_data.publisher.publish_frame(persons)
+
+    # Log periódico: ~cada 60 frames (~4 s a 15 fps)
+    fc = user_data.get_count()
+    if fc % 60 == 0:
+        ids = sorted(persons.keys())
+        kp_total = sum(len(lm) for lm in persons.values())
+        print(f"frame {fc:>5d} | personas={len(persons)} ids={ids} kp_total={kp_total}",
+              flush=True)
 
     return Gst.PadProbeReturn.OK
 
