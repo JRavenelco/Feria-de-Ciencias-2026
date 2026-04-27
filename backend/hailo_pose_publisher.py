@@ -228,23 +228,28 @@ def app_callback(pad, info, user_data: PoseCallbackData):
         # por keypoint, así que NO filtramos por visibilidad — confiamos en
         # la confianza global de la detección (>=0.40 ya filtrado arriba).
         # Sí descartamos keypoints fuera de [0,1] por si el bbox los empuja.
+        # Centro del bbox en coordenadas normalizadas de frame [0,1]
+        cx = bbox.xmin() + bbox.width()  * 0.5
+        cy = bbox.ymin() + bbox.height() * 0.5
+        hw = bbox.width()  * 0.5   # semi-ancho
+        hh = bbox.height() * 0.5   # semi-alto
+
         lm = {}
         for kp_name, kp_idx in KP.items():
             if kp_idx >= len(points):
                 continue
             pt = points[kp_idx]
-            x_raw = pt.x() * bbox.width()  + bbox.xmin()
-            y_raw = pt.y() * bbox.height() + bbox.ymin()
 
-            # Diagnóstico: imprime valores crudos del primer KP visible
+            # TAPPAS 'filter' usa origen en el CENTRO del bbox, rango ≈[-2,2].
+            # x_norm = cx + pt.x * hw,  y_norm = cy + pt.y * hh
+            x_raw = cx + pt.x() * hw
+            y_raw = cy + pt.y() * hh
+
             if diag and kp_idx == 0:
-                print(f"  [RAW nose] pt=({pt.x():.4f},{pt.y():.4f})  "
-                      f"bbox=({bbox.xmin():.3f},{bbox.ymin():.3f},"
-                      f"{bbox.width():.3f},{bbox.height():.3f})  "
-                      f"→ x={x_raw:.4f} y={y_raw:.4f}", flush=True)
+                print(f"  [nose] pt=({pt.x():.3f},{pt.y():.3f}) "
+                      f"→ frame({x_raw:.3f},{y_raw:.3f})", flush=True)
 
-            # Clamp en vez de descartar: keypoints en extremos del frame
-            # pueden salir ligeramente de [0,1] y son válidos.
+            # Clamp: keypoints en extremos del frame pueden salir ±ε de [0,1]
             x_norm = float(np.clip(x_raw, 0.0, 1.0))
             y_norm = float(np.clip(y_raw, 0.0, 1.0))
             lm[kp_name] = (x_norm, y_norm, 0.0)

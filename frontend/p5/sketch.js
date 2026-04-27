@@ -61,6 +61,8 @@ const MAX_JOINTS = 64;
 // ── Estado de pose recibido por OSC ──────────────────────────────────────────
 const pose         = {};   // /pose/{id}/{part} → [x,y,z]
 const poseAt       = {};   // timestamp del último update por clave
+const posePrev     = {};   // último valor previo por clave (para velocidad)
+const poseVel      = {};   // |velocidad| estimada por clave (para heat)
 const personLastSeen = new Array(MAX_PERSONS).fill(0);
 const POSE_TTL_MS = 600;
 const PERSON_TIMEOUT = 3000;
@@ -78,7 +80,7 @@ let   numJoints = 0;
 // 480x270 = ~130 K celdas. Suficiente detalle para domo/proyector.
 const SIM_W = 480;
 const SIM_H = 270;
-const ITERS_PER_FRAME = 8;     // pasos de Gray-Scott por frame de render
+const ITERS_PER_FRAME = 24;    // pasos de Gray-Scott por frame de render
 
 // Parámetros base de Gray-Scott. La SDF los modula localmente.
 let baseFeed = 0.055;          // “coral”
@@ -174,13 +176,13 @@ void main() {
   lap += texture2D(uState, uv + vec2( 0.0,   px.y)).rg * 0.20;
   lap += texture2D(uState, uv + vec2( px.x,  px.y)).rg * 0.05;
 
-  // Distancia al esqueleto y “piel” gaussiana
+  // Distancia al esqueleto y “piel” gaussiana (ancha → banda ~3% de frame).
   float dSkel = skeletonSDF(uv);
-  float skin  = exp(-dSkel * dSkel * 600.0) * uSkinStrength;
+  float skin  = exp(-dSkel * dSkel * 180.0) * uSkinStrength;
 
   // Modulación local de feed/kill: cerca del cuerpo el sistema "florece".
-  float feed = uFeed + skin * 0.020;
-  float kill = uKill - skin * 0.005;
+  float feed = uFeed + skin * 0.030;
+  float kill = uKill - skin * 0.008;
 
   float reaction = u * v * v;
   float du = uDu * lap.r - reaction + feed * (1.0 - u);
@@ -254,8 +256,20 @@ function connectWS() {
     for (const [key, val] of Object.entries(data.latestPose)) {
       if (!key.startsWith('/pose/')) continue;
       if (!Array.isArray(val) || val.length < 3) continue;
-      pose[key]   = val;
-      poseAt[key] = now;
+
+      // Estimar velocidad (magnitud del delta normalizado) para heat.
+      const prev = pose[key];
+      if (prev && prev.length >= 2) {
+        const dx = val[0] - prev[0];
+        const dy = val[1] - prev[1];
+        const v  = Math.sqrt(dx*dx + dy*dy);
+        // Suavizar y mapear [0, 0.05] → [0, 1]
+        const prevV = poseVel[key] || 0;
+        poseVel[key] = prevV * 0.7 + Math.min(1.0, v * 20) * 0.3;
+      }
+      posePrev[key] = prev;
+      pose[key]     = val;
+      poseAt[key]   = now;
 
       const m = key.match(/^\/pose\/(\d+)\//);
       if (m) {
@@ -292,10 +306,19 @@ function rebuildPoseUniforms() {
       const pt = getPt(id, part);
       if (!pt) continue;
       const i = numJoints * 4;
+      // heat derivado de velocidad: quieto=0.35, movimiento fuerte=1.0
+      const velKey = `/pose/${id}/${part}`;
+      const vel    = poseVel[velKey] || 0;
+      const heat   = 0.35 + Math.min(0.65, vel);
+      // Radio: manos y cabeza más grandes (focos de atención).
+      let radius = 0.045;
+      if (part === 'nose')                          radius = 0.06;
+      if (part === 'wrist/L' || part === 'wrist/R') radius = 0.055;
+      if (part === 'ankle/L' || part === 'ankle/R') radius = 0.05;
       jointArr[i + 0] = pt.x;
       jointArr[i + 1] = pt.y;
-      jointArr[i + 2] = 0.6;     // heat (TODO: derivar de velocidad)
-      jointArr[i + 3] = 0.018;   // radio de inyección
+      jointArr[i + 2] = heat;
+      jointArr[i + 3] = radius;
       numJoints++;
     }
 
